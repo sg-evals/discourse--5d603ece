@@ -1,0 +1,114 @@
+# WARNING: Never edit this file.
+# It will be overwritten when translations are pulled from Crowdin.
+#
+# To work with us on translations, join this project:
+# https://translate.discourse.org/
+
+ru:
+  js:
+    errors:
+      explorer:
+        no_semicolons: "Удалите точку с запятой из запроса."
+        dirty: "Вы должны сохранить запрос перед его выполнением."
+    explorer:
+      default_query: "Домашнюю страницу"
+      or: "или"
+      admins_only: "Исследование данных доступно только для администраторов."
+      allow_groups: "Разрешить группам доступ к этому запросу"
+      title: "Проводник данных"
+      create: "Создать"
+      create_placeholder: "Имя запроса..."
+      description_placeholder: "Введите описание"
+      import:
+        label: "Импорт"
+        unparseable_json: "Невозможно распарсить JSON-файл."
+        wrong_json: "Неверный формат JSON-файла. Файл должен содержать объект 'запрос', у которого как минимум должно быть свойство 'sql'."
+      help:
+        label: "Помощь"
+        modal_title: "Проводник данных. Справка."
+      schema:
+        title: "Схема базы данных"
+        filter: "Поиск…"
+        sensitive: "Эта колонка может содержать конфиденциальную информацию. Будьте осторожны при использовании её содержимого."
+      types:
+        bool:
+          yes: "Да"
+          no: "Нет"
+          null_: "Null"
+      export: "Экспорт"
+      view_json: "Просмотреть JSON"
+      view: "Вид"
+      save: "Сохранить изменения"
+      run: "Выполнить запрос"
+      undo: "Отменить изменения"
+      edit: "Изменить"
+      delete: "Удалить"
+      download_json: "JSON"
+      download_csv: "CSV"
+      show_table: "Таблица"
+      show_graph: "График"
+      others_dirty: "Запрос имеет несохранённые изменения, которые будут потеряны, если вы уйдёте со страницы."
+      run_time: "Запрос завершен за %{value} мс."
+      result_count:
+        one: "%{count} результат."
+        few: "%{count} результата."
+        many: "%{count} результатов."
+        other: "%{count} результатов."
+      max_result_count:
+        one: "Показан %{count} лучший результат."
+        few: "Показаны %{count} лучших результата."
+        many: "Показаны %{count} лучших результатов."
+        other: "Показаны %{count} лучшего результата."
+      query_name: "Запрос"
+      query_groups: "Группы"
+      link: "Ссылка для"
+      report_name: "Отчёт"
+      query_description: "Описание"
+      query_time: "Время выполнения последнего запроса"
+      query_user: "Создано"
+      column: "Колонка %{number}"
+      explain_label: "Отобразить план запроса"
+      reset_params: "Сбросить"
+      search_placeholder: "Поиск…"
+      no_search_results: "К сожалению, мы не смогли найти результаты, соответствующие вашему запросу."
+      form:
+        errors:
+          invalid: "Недопустимое значение"
+          no_such_category: "Нет такой категории"
+          no_such_group: "Нет такой группы"
+    group:
+      reports: "Отчеты"
+    admin:
+      api:
+        scopes:
+          descriptions:
+            discourse_data_explorer:
+              run_queries: "Выполнение запросов проводника данных. Ограничьте ключ API набором запросов, указав идентификаторы запросов."
+    discourse_automation:
+      scriptables:
+        recurring_data_explorer_result_pm:
+          fields:
+            recipients:
+              label: Отправить пользователю, в группу или на адрес электронной почты
+            query_id:
+              label: Запрос проводника данных
+            query_params:
+              label: Параметры запроса для проводника данных
+            skip_empty:
+              label: Пропустить отправку личного сообщения, если нет результатов
+            attach_csv:
+              label: Прикрепить CSV-файл к личному сообщению
+            users_from_group:
+              label: Отправлять отдельное ЛС каждому участнику группы
+        recurring_data_explorer_result_topic:
+          fields:
+            topic_id:
+              label: Тема для публикации результатов запроса
+            query_id:
+              label: Запрос проводника данных
+            query_params:
+              label: Параметры запроса для проводника данных
+            skip_empty:
+              label: Пропустить публикацию, если нет результатов
+            attach_csv:
+              label: Прикрепить CSV-файл к публикации

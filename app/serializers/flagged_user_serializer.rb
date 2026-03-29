@@ -1,0 +1,70 @@
+# frozen_string_literal: true
+
+class FlaggedUserSerializer < BasicUserSerializer
+  attributes :can_delete_all_posts,
+             :can_be_deleted,
+             :post_count,
+             :topic_count,
+             :ip_address,
+             :email,
+             :custom_fields,
+             :flags_agreed,
+             :flags_disagreed,
+             :flags_ignored,
+             :created_at,
+             :custom_fields,
+             :post_count,
+             :trust_level,
+             :silenced_count,
+             :suspended_count,
+             :rejected_posts_count
+
+  def can_delete_all_posts
+    scope.can_delete_all_posts?(object)
+  end
+
+  def can_be_deleted
+    scope.can_delete_user?(object)
+  end
+
+  def ip_address
+    object.ip_address.try(:to_s)
+  end
+
+  def flags_agreed
+    object.user_stat.flags_agreed
+  end
+
+  def flags_disagreed
+    object.user_stat.flags_disagreed
+  end
+
+  def flags_ignored
+    object.user_stat.flags_ignored
+  end
+
+  def silenced_count
+    object.number_of_silencings
+  end
+
+  def suspended_count
+    object.number_of_suspensions
+  end
+
+  def rejected_posts_count
+    object.number_of_rejected_posts
+  end
+
+  def custom_fields
+    fields = User.allowed_user_custom_fields(scope)
+
+    result = {}
+    fields.each { |k| result[k] = object.custom_fields[k] if object.custom_fields[k].present? }
+
+    result
+  end
+
+  def include_email?
+    scope.can_check_emails?(scope.user)
+  end
+end

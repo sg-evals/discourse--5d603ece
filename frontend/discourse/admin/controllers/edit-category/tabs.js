@@ -1,0 +1,412 @@
+import { tracked } from "@glimmer/tracking";
+import Controller from "@ember/controller";
+import { action, computed, getProperties } from "@ember/object";
+import { and } from "@ember/object/computed";
+import { next } from "@ember/runloop";
+import { service } from "@ember/service";
+import { popupAjaxError } from "discourse/lib/ajax-error";
+import { AUTO_GROUPS } from "discourse/lib/constants";
+import { registeredEditCategoryTabs } from "discourse/lib/edit-category-tabs";
+import getURL from "discourse/lib/get-url";
+import { autoTrackedArray } from "discourse/lib/tracked-tools";
+import DiscourseURL from "discourse/lib/url";
+import { defaultHomepage } from "discourse/lib/utilities";
+import Category from "discourse/models/category";
+import { i18n } from "discourse-i18n";
+
+// Only fields managed through FormKit in the legacy edit-category flow.
+// Other legacy tab components (settings, tags, etc.) write directly to the model.
+const LEGACY_FORMKIT_FIELDS = [
+  "name",
+  "slug",
+  "parent_category_id",
+  "color",
+  "text_color",
+  "style_type",
+  "emoji",
+  "icon",
+  "localizations",
+  "email_in",
+  "email_in_allow_strangers",
+  "mailinglist_mirror",
+  "topic_template",
+  "form_template_ids",
+];
+
+// All fields managed through FormKit in the simplified creation flow.
+const SIMPLIFIED_FIELD_LIST = [
+  "name",
+  "slug",
+  "parent_category_id",
+  "description",
+  "color",
+  "text_color",
+  "style_type",
+  "emoji",
+  "icon",
+  "localizations",
+  "position",
+  "num_featured_topics",
+  "search_priority",
+  "allow_badges",
+  "topic_featured_link_allowed",
+  "navigate_to_first_post_after_read",
+  "all_topics_wiki",
+  "allow_unlimited_owner_edits_on_first_post",
+  "moderating_group_ids",
+  "auto_close_hours",
+  "auto_close_based_on_last_post",
+  "default_view",
+  "default_top_period",
+  "sort_order",
+  "sort_ascending",
+  "default_list_filter",
+  "show_subcategory_list",
+  "subcategory_list_style",
+  "read_only_banner",
+  "email_in",
+  "email_in_enabled",
+  "email_in_allow_strangers",
+  "mailinglist_mirror",
+  "allowed_tag_groups",
+  "allowed_tags",
+  "required_tag_groups",
+  "minimum_required_tags",
+  "allow_global_tags",
+  "default_slow_mode_seconds",
+  "topic_template",
+  "form_template_ids",
+];
+
+const SHOW_ADVANCED_TABS_KEY = "category_edit_show_advanced_tabs";
+
+export default class EditCategoryTabsController extends Controller {
+  @service currentUser;
+  @service dialog;
+  @service site;
+  @service siteSettings;
+  @service router;
+  @service keyValueStore;
+  @service toasts;
+
+  @tracked breadcrumbCategories = this.site.get("categoriesList");
+  @tracked
+  showAdvancedTabs =
+    this.keyValueStore.getItem(SHOW_ADVANCED_TABS_KEY) === "true";
+  @tracked formData;
+  @tracked selectedTab = "general";
+  @tracked formApi = null;
+  @autoTrackedArray panels = [];
+  saving = false;
+  deleting = false;
+  showTooltip = false;
+  createdCategory = false;
+  expandedMenu = false;
+  parentParams = null;
+  validators = [];
+  textColors = ["000000", "FFFFFF"];
+
+  @and("showTooltip", "model.cannot_delete_reason") showDeleteReason;
+
+  @action
+  initFormData() {
+    const enableSimplifiedCategoryCreation =
+      this.siteSettings.enable_simplified_category_creation;
+    const data = getProperties(
+      this.model,
+      ...(enableSimplifiedCategoryCreation
+        ? SIMPLIFIED_FIELD_LIST
+        : LEGACY_FORMKIT_FIELDS)
+    );
+
+    if (enableSimplifiedCategoryCreation) {
+      if (!this.model.styleType) {
+        data.style_type = "icon";
+      }
+
+      data.required_tag_groups = Array.from(
+        data.required_tag_groups ?? [],
+        (rtg) => ({ ...rtg })
+      );
+      data.category_setting = { ...(this.model.category_setting ?? {}) };
+      data.custom_fields = { ...(this.model.custom_fields ?? {}) };
+
+      data.category_type_site_settings = {};
+
+      Object.values(this.model.category_types ?? {}).forEach((categoryType) => {
+        categoryType.configuration_schema.category_custom_fields?.forEach(
+          (field) => {
+            data.custom_fields[field.key] ??= field.default;
+          }
+        );
+
+        categoryType.configuration_schema.site_settings?.forEach((setting) => {
+          data.category_type_site_settings[setting.key] = this.model.id
+            ? setting.current
+            : setting.default;
+        });
+      });
+    }
+
+    this.formData = data;
+  }
+
+  @computed("saving", "deleting")
+  get deleteDisabled() {
+    return this.deleting || this.saving || false;
+  }
+
+  @computed("name")
+  get categoryName() {
+    const name = this.name || "";
+    return name.trim().length > 0 ? name : i18n("preview");
+  }
+
+  @computed("saving", "model.id")
+  get saveLabel() {
+    if (this.saving) {
+      return "saving";
+    }
+    return this.model?.id ? "category.save" : "category.create_category";
+  }
+
+  get baseTitle() {
+    if (this.model.id) {
+      return i18n("category.edit_dialog_title", {
+        categoryName: this.model.name,
+      });
+    }
+
+    const types = Object.values(this.model.category_types ?? {});
+    if (types.length > 0) {
+      return i18n("category.create_with_type", {
+        typeName: types[0].name.toLowerCase(),
+      });
+    }
+
+    return i18n("category.create");
+  }
+
+  get isFormDirty() {
+    return this.formApi?.isDirty ?? false;
+  }
+
+  @action
+  onRegisterFormApi(api) {
+    this.formApi = api;
+  }
+
+  @action
+  setSelectedTab(tab) {
+    this.selectedTab = tab;
+    this.showAdvancedTabs = this.showAdvancedTabs || tab !== "general";
+  }
+
+  @action
+  validateForm(data, { addError }) {
+    if (!this.siteSettings.enable_simplified_category_creation) {
+      return;
+    }
+
+    if (this.selectedTab === "general") {
+      return;
+    }
+
+    let hasGeneralTabErrors = false;
+
+    if (!data.name) {
+      hasGeneralTabErrors = true;
+      addError("name", {
+        title: i18n("category.name"),
+        message: i18n("form_kit.errors.required"),
+      });
+    }
+
+    if (data.style_type === "emoji" && !data.emoji) {
+      hasGeneralTabErrors = true;
+      addError("emoji", {
+        title: i18n("category.emoji"),
+        message: i18n("category.validations.emoji_required"),
+      });
+    }
+
+    if (data.style_type === "icon" && !data.icon) {
+      hasGeneralTabErrors = true;
+      addError("icon", {
+        title: i18n("category.icon"),
+        message: i18n("category.validations.icon_required"),
+      });
+    }
+
+    if (hasGeneralTabErrors) {
+      this.selectedTab = "general";
+    }
+  }
+
+  @action
+  registerValidator(validator) {
+    this.validators.push(validator);
+  }
+
+  @action
+  isLeavingForm(transition) {
+    const name = transition.targetName;
+    return (
+      !name.startsWith("editCategory.tabs") &&
+      !name.startsWith("newCategory.tabs")
+    );
+  }
+
+  _wouldLoseAccess(category = this.model) {
+    if (this.currentUser.admin) {
+      return false;
+    }
+
+    const permissions = category.permissions;
+    if (!permissions?.length) {
+      return false;
+    }
+
+    const userGroupIds = new Set(this.currentUser.groups.map((g) => g.id));
+
+    return !permissions.some(
+      (p) =>
+        p.group_id === AUTO_GROUPS.everyone.id || userGroupIds.has(p.group_id)
+    );
+  }
+
+  @action
+  async saveCategory(data) {
+    if (this.validators.some((validator) => validator())) {
+      return;
+    }
+
+    // eslint-disable-next-line no-unused-vars
+    const { visibility, ...categoryData } = data;
+    this.model.setProperties(categoryData);
+
+    // If permissions is empty or not set, ensure it's an empty array (public category)
+    if (!this.model.permissions || this.model.permissions.length === 0) {
+      this.model.set("permissions", []);
+    }
+
+    const lostAccess = this._wouldLoseAccess();
+
+    if (lostAccess) {
+      const confirmed = await this.dialog.yesNoConfirm({
+        message: i18n("category.errors.self_lockout"),
+      });
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    this.set("saving", true);
+
+    try {
+      const result = await this.model.save();
+      const updatedModel = this.site.updateCategory(result.category);
+      updatedModel.setupGroupsAndPermissions();
+
+      if (lostAccess) {
+        this.router.transitionTo(`discovery.${defaultHomepage()}`);
+        return;
+      }
+
+      this.set("saving", false);
+      this.initFormData();
+
+      this.toasts.success({
+        duration: "short",
+        data: { message: i18n("saved") },
+      });
+
+      if (!this.model.id) {
+        this.router.transitionTo(
+          "editCategory",
+          Category.slugFor(updatedModel)
+        );
+      }
+
+      // ensure breadcrumbs contain the updated category model
+      this.breadcrumbCategories = this.site.categoriesList.map((c) =>
+        c.id === this.model.id ? updatedModel : c
+      );
+    } catch (error) {
+      this.set("saving", false);
+      popupAjaxError(error);
+      this.model.set("parent_category_id", undefined);
+    }
+  }
+
+  @action
+  deleteCategory() {
+    if (this.deleteDisabled) {
+      return;
+    }
+
+    this.set("deleting", true);
+    this.dialog.deleteConfirm({
+      title: i18n("category.delete_confirm"),
+      didConfirm: () => {
+        this.model
+          .destroy()
+          .then(() => {
+            this.router.transitionTo("discovery.categories");
+          })
+          .catch(() => {
+            this.displayErrors([i18n("category.delete_error")]);
+          })
+          .finally(() => {
+            this.set("deleting", false);
+          });
+      },
+      didCancel: () => this.set("deleting", false),
+    });
+  }
+
+  @action
+  toggleDeleteTooltip() {
+    if (this.deleteDisabled) {
+      return;
+    }
+
+    this.toggleProperty("showTooltip");
+  }
+
+  @action
+  goBack() {
+    DiscourseURL.routeTo(this.model.url);
+  }
+
+  @action
+  toggleAdvancedTabs() {
+    this.showAdvancedTabs = !this.showAdvancedTabs;
+
+    // Save preference to localStorage
+    this.keyValueStore.setItem(
+      SHOW_ADVANCED_TABS_KEY,
+      this.showAdvancedTabs.toString()
+    );
+
+    // When collapsing, reset to general unless current tab is still visible
+    if (!this.showAdvancedTabs && this.selectedTab !== "general") {
+      const primaryTab = registeredEditCategoryTabs.find(
+        (tab) => tab.id === this.selectedTab && tab.primary
+      );
+      if (!primaryTab) {
+        next(() => {
+          this.selectedTab = "general";
+          if (this.router.currentRouteName?.startsWith("newCategory")) {
+            DiscourseURL.routeTo(getURL("/new-category/general"));
+          } else if (this.parentParams?.slug) {
+            DiscourseURL.routeTo(
+              getURL(`/c/${this.parentParams.slug}/edit/general`)
+            );
+          }
+        });
+      }
+    }
+  }
+}

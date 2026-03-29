@@ -1,0 +1,32 @@
+/* eslint-disable ember/no-classic-components */
+import Component from "@ember/component";
+import { computed } from "@ember/object";
+import { alias } from "@ember/object/computed";
+import { trustHTML } from "@ember/template";
+import { tagName } from "@ember-decorators/component";
+import concatClass from "discourse/helpers/concat-class";
+
+@tagName("")
+export default class AdminReportTableCell extends Component {
+  options = null;
+
+  @alias("label.type") type;
+  @alias("label.mainProperty") property;
+  @alias("computedLabel.formattedValue") formattedValue;
+  @alias("computedLabel.value") value;
+
+  @computed("label", "data", "options")
+  get computedLabel() {
+    return this.label.compute(this.data, this.options || {});
+  }
+
+  <template>
+    <td
+      title={{this.value}}
+      class={{concatClass "admin-report-table-cell" this.type this.property}}
+      ...attributes
+    >
+      {{trustHTML this.formattedValue}}
+    </td>
+  </template>
+}
